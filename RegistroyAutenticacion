@@ -1,0 +1,368 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Adafruit_Fingerprint.h>
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+#define RST_PIN  9    //Pin 9 para el reset del RC522
+#define SS_PIN   10   //Pin 10 para el SS (SDA) del RC522
+
+SoftwareSerial mySerial(2, 3);
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
+MFRC522 mfrc522(SS_PIN, RST_PIN); // Creamos el objeto para el RC522
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+uint8_t id = 1; // Inicializamos un contador de IDs para el registro de huellas
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Bienvenido!");
+
+  // Inicialización del sensor de huellas
+  finger.begin(57600);
+  
+  finger.getTemplateCount();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Esperando huella...");
+  lcd.setCursor(0,1);
+  lcd.print("...");
+  delay(5000);
+  lcd.clear();
+
+  Serial.begin(9600); // Iniciamos la comunicación serial
+  SPI.begin();        // Iniciamos el Bus SPI
+  mfrc522.PCD_Init(); // Iniciamos el MFRC522
+}
+
+void loop() {
+  // Revisamos si hay nuevas tarjetas presentes
+  if (mfrc522.PICC_IsNewCardPresent()) {  
+    if (mfrc522.PICC_ReadCardSerial()) {
+      lcd.print("Leyendo UID...");
+      delay(2500);
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Modo Registro");
+      delay(2500);
+      getFingerprintEnroll(id); // Llamamos a la función de registro de huellas
+      id++; // Incrementamos el contador de IDs
+      mfrc522.PICC_HaltA();         
+    }      
+  }
+
+  int fingerprintID = getFingerprintIDez();
+  if (fingerprintID != -1) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Bienvenido ");
+    lcd.print(fingerprintID);
+  } else {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Huella no");
+    lcd.setCursor(0,1);
+    lcd.print("Registrada");
+  }
+  delay(2500);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Esperando huella...");
+  lcd.setCursor(0,1);
+  lcd.print("...");
+  delay(2500);
+}
+
+int getFingerprintIDez() {
+  uint8_t p = finger.getImage();
+  if (p != FINGERPRINT_OK) return -1;
+
+  p = finger.image2Tz();
+  if (p != FINGERPRINT_OK) return -1;
+
+  p = finger.fingerFastSearch();
+  if (p != FINGERPRINT_OK) return -1;
+
+  return finger.fingerID;
+}
+
+// Registro de huellas
+void getFingerprintEnroll(uint8_t id) {
+  int p = -1;
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Esperando huella");
+  lcd.setCursor(0, 1);
+  lcd.print("para registrar #");
+  lcd.print(id);
+  while (p != FINGERPRINT_OK) {
+    p = finger.getImage();
+    switch (p) {
+    case FINGERPRINT_OK:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Imagen capturada");
+      break;
+    case FINGERPRINT_NOFINGER:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Sin huella");
+      lcd.setCursor(0, 1);
+      lcd.print("...");
+  break;
+      break;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error de");
+      lcd.setCursor(0, 1);
+      lcd.print("Comunicacion");
+      break;
+    case FINGERPRINT_IMAGEFAIL:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error de imagen");
+      break;
+    default:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error");
+      lcd.setCursor(0, 1);
+      lcd.print("Desconocido");
+      break;
+    }
+  }
+
+  // OK success!
+
+  p = finger.image2Tz(1);
+  switch (p) {
+    case FINGERPRINT_OK:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Imagen");
+      lcd.setCursor(0, 1);
+      lcd.print("Convertida");
+    break;
+      break;
+    case FINGERPRINT_IMAGEMESS:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Imagen confusa");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error de");
+      lcd.setCursor(0, 1);
+      lcd.print("Comunicacion");
+      return p;
+    case FINGERPRINT_FEATUREFAIL:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("No se encontraron");
+      lcd.setCursor(0, 1);
+      lcd.print("características");
+      return p;
+    case FINGERPRINT_INVALIDIMAGE:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("No se encontraron");
+      lcd.setCursor(0, 1);
+      lcd.print("características");
+      return p;
+    default:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error");
+      lcd.setCursor(0, 1);
+      lcd.print("Desconocido");
+      return p;
+  }
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Retire el dedo");
+  delay(2000);
+  p = 0;
+  while (p != FINGERPRINT_NOFINGER) {
+    p = finger.getImage();
+  }
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ID #");
+  lcd.print(id);
+  
+  p = -1;
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Coloca el mismo");
+  lcd.setCursor(0, 1);
+  lcd.print("dedo nuevamente");
+  
+  while (p != FINGERPRINT_OK) {
+    p = finger.getImage();
+    switch (p) {
+    case FINGERPRINT_OK:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Imagen capturada");
+      break;
+    case FINGERPRINT_NOFINGER:
+      Serial.print("Esperando...");
+      break;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error de");
+      lcd.setCursor(0, 1);
+      lcd.print("Comunicacion");
+      break;
+    case FINGERPRINT_IMAGEFAIL:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error de imagen");
+      break;
+    default:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error");
+      lcd.setCursor(0, 1);
+      lcd.print("Desconocido");
+      break;
+    }
+  }
+
+  // OK success!
+
+  p = finger.image2Tz(2);
+  switch (p) {
+    case FINGERPRINT_OK:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Imagen");
+      lcd.setCursor(0, 1);
+      lcd.print("Convertida");
+      break;
+    case FINGERPRINT_IMAGEMESS:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Imagen muy");
+      lcd.setCursor(0, 1);
+      lcd.print("Confusa");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error de");
+      lcd.setCursor(0, 1);
+      lcd.print("Comunicacion");
+      return p;
+    case FINGERPRINT_FEATUREFAIL:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("No se encontraron");
+      lcd.setCursor(0, 1);
+      lcd.print("características");
+      return p;
+    case FINGERPRINT_INVALIDIMAGE:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("No se encontraron");
+      lcd.setCursor(0, 1);
+      lcd.print("características");
+      return p;
+    default:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error");
+      lcd.setCursor(0, 1);
+      lcd.print("Desconocido");
+      return p;
+  }
+  
+  // OK converted!
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Creando modelo para #");
+  lcd.print(id);
+  
+  p = finger.createModel();
+  if (p == FINGERPRINT_OK) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Huellas");
+    lcd.setCursor(0, 1);
+    lcd.print("Coinciden!");
+  } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Error de");
+    lcd.setCursor(0, 1);
+    lcd.print("Comunicacion");
+    return p;
+    
+  } else if (p == FINGERPRINT_ENROLLMISMATCH) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Las huellas no");
+    lcd.setCursor(0, 1);
+    lcd.print("coinciden");
+    return p;
+    
+  } else {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error");
+      lcd.setCursor(0, 1);
+      lcd.print("Desconocido");
+    return p;
+  }   
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ID #");
+  lcd.print(id);
+
+  p = finger.storeModel(id);
+  if (p == FINGERPRINT_OK) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Registrada!");
+
+  } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Error de");
+    lcd.setCursor(0, 1);
+    lcd.print("Comunicacion");
+    return p;
+    
+  } else if (p == FINGERPRINT_BADLOCATION) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("No se pudo");
+    lcd.setCursor(0, 1);
+    lcd.print("registrar");
+    return p;
+    
+  } else if (p == FINGERPRINT_FLASHERR) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Error de");
+    lcd.setCursor(0, 1);
+    lcd.print("reconocimiento");
+    return p;
+    
+  } else {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Error");
+    lcd.setCursor(0, 1);
+    lcd.print("Desconocido");
+    return p;
+  }   
+}
