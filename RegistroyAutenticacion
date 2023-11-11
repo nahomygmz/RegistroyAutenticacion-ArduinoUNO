@@ -14,6 +14,11 @@ MFRC522 mfrc522(SS_PIN, RST_PIN); // Creamos el objeto para el RC522
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 uint8_t id = 1; // Inicializamos un contador de IDs para el registro de huellas
 
+String nombre;
+String departamento;
+String rol;
+bool datosCapturadosPorBluetooth = false;
+
 void setup() {
   lcd.init();
   lcd.backlight();
@@ -29,10 +34,10 @@ void setup() {
   lcd.print("Esperando huella...");
   lcd.setCursor(0,1);
   lcd.print("...");
-  delay(5000);
+  delay(3000);
   lcd.clear();
 
-  Serial.begin(9600); // Iniciamos la comunicación serial
+  Serial.begin(57600); // Iniciamos la comunicación serial
   SPI.begin();        // Iniciamos el Bus SPI
   mfrc522.PCD_Init(); // Iniciamos el MFRC522
 }
@@ -41,6 +46,8 @@ void loop() {
   // Revisamos si hay nuevas tarjetas presentes
   if (mfrc522.PICC_IsNewCardPresent()) {  
     if (mfrc522.PICC_ReadCardSerial()) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
       lcd.print("Leyendo UID...");
       delay(2500);
       lcd.clear();
@@ -48,6 +55,7 @@ void loop() {
       lcd.print("Modo Registro");
       delay(2500);
       getFingerprintEnroll(id); // Llamamos a la función de registro de huellas
+      finger.begin(57600); // Volvemos a activar la comunicación del lector de huellas
       id++; // Incrementamos el contador de IDs
       mfrc522.PICC_HaltA();         
     }      
@@ -67,12 +75,13 @@ void loop() {
     lcd.print("Registrada");
   }
   delay(2500);
+  finger.getTemplateCount();
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Esperando huella...");
   lcd.setCursor(0,1);
   lcd.print("...");
-  delay(2500);
+  delay(3000);
 }
 
 int getFingerprintIDez() {
@@ -297,6 +306,7 @@ void getFingerprintEnroll(uint8_t id) {
     lcd.print("Huellas");
     lcd.setCursor(0, 1);
     lcd.print("Coinciden!");
+    
   } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -332,6 +342,7 @@ void getFingerprintEnroll(uint8_t id) {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Registrada!");
+    delay(3000);
 
   } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
     lcd.clear();
@@ -364,5 +375,114 @@ void getFingerprintEnroll(uint8_t id) {
     lcd.setCursor(0, 1);
     lcd.print("Desconocido");
     return p;
-  }   
+  }
+
+  capturarDatos(); // Llamamos la función para capturar los datos
+}
+
+void capturarDatos() {
+  Serial.end();
+  SoftwareSerial miBT(10, 11);
+  Serial.begin(57600);
+  miBT.begin(57600);  
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Conectando al");
+  lcd.setCursor(0, 1);
+  lcd.print("Bluetooth...");
+  delay(4000);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Conectado!");
+  delay(3000);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Ingrese su");
+  lcd.setCursor(0, 1);
+  lcd.print("nombre:");
+
+  String mensaje;
+  bool nombreRecibido = false;
+  bool departamentoRecibido = false;
+  bool rolRecibido = false;
+
+  while (true) {
+    if (miBT.available()) {
+      mensaje = miBT.readStringUntil('\n'); // Leer hasta encontrar un salto de línea
+
+      if (mensaje.startsWith("NOMBRE:")) {
+        nombre = mensaje.substring(7); // Extraer el nombre (después de "NOMBRE:")
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        delay(1000);
+        lcd.print("Nombre:");
+        lcd.setCursor(0, 1);
+        delay(1000);
+        lcd.print(nombre);
+        delay(2000);
+        nombreRecibido = true;
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Ingrese su");
+        lcd.setCursor(0, 1);
+        lcd.print("departamento:");
+      }
+      
+      if (nombreRecibido == true){
+        if (mensaje.startsWith("DEPARTAMENTO:")) {
+          departamento = mensaje.substring(13); // Extraer el departamento (después de "DEPARTAMENTO:")
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          delay(1000);
+          lcd.print("Departamento:");
+          lcd.setCursor(0, 1);
+          delay(1000);
+          lcd.print(departamento);
+          delay(2000);
+          departamentoRecibido = true;
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Ingrese su");
+          lcd.setCursor(0, 1);
+          lcd.print("rol:");
+        }
+
+        if(departamentoRecibido == true){
+
+          if (mensaje.startsWith("ROL:")) {
+            rol = mensaje.substring(4); // Extraer el rol (después de "ROL:")
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            delay(1000);
+            lcd.print("Rol:");
+            lcd.setCursor(0, 1);
+            delay(1000);
+            lcd.print(rol);
+            delay(2000);
+            rolRecibido = true;
+          }
+
+          if (rolRecibido == true) {
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("Datos");
+            lcd.setCursor(0, 1);
+            lcd.print("guardados!");
+            delay(3000);
+
+            // Desactiva la comunicación Bluetooth
+            Serial.end();
+            finger.begin(57600);
+            Serial.begin(57600); // Iniciamos la comunicación serial
+            SPI.begin();        // Iniciamos el Bus SPI
+            mfrc522.PCD_Init(); // Iniciamos el MFRC522
+            break; // Si recibimos todos los datos, salimos del bucle
+          }
+        }
+       }    
+    }
+  }
 }
